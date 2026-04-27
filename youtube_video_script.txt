@@ -1,0 +1,86 @@
+Title idea:
+Build a Local Lead Scraper with Python (Find Business Contacts + Emails)
+
+1) Hook (0:00 - 0:20)
+Voiceover:
+"In this video, I’ll show you how to scrape local business leads by profession—like realtors, salons, barbers, dentists, and contractors—with contact names, phone numbers, emails, websites, and addresses. You’ll also see batch mode and how to prepare the data for Go High Level."
+
+On screen:
+- Show final CSV quickly
+- Highlight Contact Name, Email, Phone, Company Name
+
+2) What This Tool Does (0:20 - 0:50)
+Voiceover:
+"This Python tool uses Google Geocoding and Places APIs to find businesses in a target area. It then visits their websites and tries to extract contact emails, phone numbers, and full contact names. Everything is exported to CSV in a format that’s easy to import into CRM tools like Go High Level."
+
+On screen:
+- Open business_scraper_ui.py
+- Show GUI fields
+
+3) Prerequisites (0:50 - 1:30)
+Voiceover:
+"Before we run it, you need Python, the requests library, and a Google API key with Places and Geocoding enabled."
+
+On screen (commands):
+pip install requests
+
+Voiceover:
+"Then create your API key in Google Cloud and keep it ready."
+
+4) Run the App (1:30 - 2:00)
+Voiceover:
+"Now launch the app from your project folder."
+
+On screen (Windows):
+cd "D:\AI Agency\Lead Scaper"
+python business_scraper_ui.py
+
+5) Single Search Demo (2:00 - 3:00)
+Voiceover:
+"For a single run, enter your API key, business keyword, zip code, and search radius in miles. Then click Run Query."
+
+Example inputs on screen:
+- API Key: YOUR_KEY
+- Business Type: realtor
+- Zip Code: 08830
+- Search Radius (miles): 5
+- Custom File Name: realtor_test
+
+Voiceover:
+"The script fetches leads and saves a CSV automatically."
+
+6) Batch Mode Demo (3:00 - 4:00)
+Voiceover:
+"Batch mode lets you run multiple profession-and-zip combinations at once."
+
+On screen batch box:
+realtor|08830
+barber shop|08830
+dentist|08830
+landscaping company|08830
+
+Voiceover:
+"You can paste lines directly, or load a TXT/CSV file. Then click Run Batch."
+
+7) CSV Fields + GHL Mapping (4:00 - 4:50)
+Voiceover:
+"The output includes CRM-ready fields: Contact Name as full name, Company Name, Phone, Email, Website, and Address 1, plus search metadata."
+
+On screen highlight columns:
+- Contact Name
+- Email
+- Phone
+- Company Name
+- Address 1
+- Website
+
+Voiceover:
+"For Go High Level, map Contact Name to Full Name, and map the rest directly."
+
+8) Important Notes (4:50 - 5:20)
+Voiceover:
+"Not every website shows an email or contact person, so some rows may be N/A. Also, respect API limits, terms of service, and local outreach laws when using this data."
+
+9) CTA / Outro (5:20 - 5:40)
+Voiceover:
+"If you want, I can share the next version with auto deduplication, email validation, and direct CRM push. Like, subscribe, and comment 'batch template' if you want the upload templates."

@@ -1,0 +1,326 @@
+﻿Standard Operating Procedure (SOP) for Setting Up and Running the Lead Scraper Tool
+Overview
+This guide will help you:
+* Install Python (if not already installed).
+* Install the required Python library.
+* Create a Google Cloud project, enable the required APIs, and obtain an API key.
+* Copy and save the provided Python code as a file.
+* Run the code using a graphical user interface (GUI) built with Tkinter.
+* Input search parameters (API key, business type, zip code, search radius, and an optional file name) to generate a CSV file of business leads.
+________________
+
+
+Step 1. Install Python (If Needed)
+For Windows:
+1. Download Python:
+   * Go to https://www.python.org/downloads/ and download the latest version for Windows.
+2. Run the Installer:
+   * During installation, check the box “Add Python to PATH” before clicking “Install Now.”
+3. Verify Installation:
+Open Command Prompt (press Win+R, type cmd, and hit Enter) and type:
+css
+Copy
+python --version
+   * You should see a message like Python 3.x.x.
+For Mac:
+1. Download Python:
+   * Visit https://www.python.org/downloads/ and download the latest version for macOS.
+2. Install Python:
+   * Open the downloaded package and follow the installation instructions.
+3. Verify Installation:
+Open Terminal (Applications → Utilities → Terminal or via Spotlight) and type:
+css
+Copy
+python3 --version
+   * You should see a version message such as Python 3.x.x.
+________________
+
+
+Step 2. Install the Required Python Library (Requests)
+1. Open Terminal or Command Prompt:
+   * Windows: Open Command Prompt.
+   * Mac: Open Terminal.
+2. Install Requests:
+Type the following command and press Enter:
+nginx
+Copy
+pip install requests
+   * (If your system differentiates between Python 2 and Python 3, you may need to use pip3 install requests.)
+________________
+
+
+Step 3. Get Your Google API Key
+1. Create a Google Cloud Project and Enable APIs:
+   * Sign in at Google Cloud Console.
+   * Create a new project.
+   * Enable both the Google Places API and the Google Geocoding API.
+2. Create an API Key:
+   * In the Cloud Console, go to APIs & Services → Credentials.
+   * Click Create Credentials → API Key and copy the generated key.
+   * Keep your API key safe—you will need to paste it into the code later.
+________________
+
+
+Step 4. Copy and Save the Provided Code
+1. Open a Text Editor or IDE:
+   * Windows: Use IDLE (comes with Python), Notepad++, or VS Code.
+   * Mac: Use IDLE (found in Applications under Python), TextEdit (in plain text mode), or VS Code.
+2. Copy the Code Below:
+python
+Copy
+import tkinter as tk
+from tkinter import messagebox
+import requests, json, csv, re, time
+from datetime import datetime
+
+
+def extract_emails_from_url(website_url):
+    """Extracts email addresses from the given website URL using regex."""
+    try:
+        resp = requests.get(website_url, timeout=10)
+        if resp.status_code != 200:
+            return []
+        html = resp.text
+        # Regex pattern for emails
+        emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", html))
+        return list(emails)
+    except Exception as e:
+        print(f"Error fetching {website_url}: {e}")
+        return []
+
+
+def run_query():
+    # Retrieve user inputs
+    api_key = api_key_entry.get().strip()
+    business_type = business_type_entry.get().strip()
+    zip_code = zip_entry.get().strip()
+    try:
+        radius = int(radius_entry.get().strip())
+    except ValueError:
+        messagebox.showerror("Invalid Input", "Search radius must be an integer.")
+        return
+    custom_filename = file_name_entry.get().strip()
+    
+    if not api_key or not business_type or not zip_code:
+        messagebox.showerror("Missing Input", "Please fill in the API Key, Business Type, and Zip Code fields.")
+        return
+
+
+    # Geocode the zip code using the Google Geocoding API
+    geocode_url = f'https://maps.googleapis.com/maps/api/geocode/json?address={zip_code}&key={api_key}'
+    geocode_response = requests.get(geocode_url)
+    geocode_data = geocode_response.json()
+    
+    if geocode_data['status'] != 'OK':
+        messagebox.showerror("Geocoding Error", "Geocoding API failed for the given zip code.")
+        return
+    location_data = geocode_data['results'][0]['geometry']['location']
+    latitude = location_data['lat']
+    longitude = location_data['lng']
+    location = f"{latitude},{longitude}"
+    
+    # Build the initial URL for the Places API Nearby Search
+    places_url = f'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={location}&radius={radius}&keyword={business_type}&key={api_key}'
+    
+    all_results = []
+    response = requests.get(places_url)
+    data = response.json()
+    all_results.extend(data.get('results', []))
+    
+    # Handle pagination (up to a maximum of 60 results across 3 pages)
+    next_page_token = data.get('next_page_token')
+    while next_page_token:
+        time.sleep(2)  # Pause to allow token activation
+        paged_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken={next_page_token}&key={api_key}"
+        paged_response = requests.get(paged_url)
+        paged_data = paged_response.json()
+        all_results.extend(paged_data.get('results', []))
+        next_page_token = paged_data.get('next_page_token')
+    
+    # Create a unique filename using the current date and time.
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    if custom_filename == "":
+        csv_filename = f"{business_type}_{zip_code}_{timestamp}.csv"
+    else:
+        csv_filename = f"{custom_filename}_{timestamp}.csv"
+    
+    # Write the collected data to a CSV file.
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['Name', 'Phone', 'Address', 'Website', 'Emails', 'Rating', 'Google Reviews', 'Price Level', 'Types']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for result in all_results:
+            name = result.get('name', 'N/A')
+            address = result.get('vicinity', 'N/A')
+            place_id = result.get('place_id', '')
+            
+            # Request detailed info for each business
+            details_url = (
+                f'https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}'
+                f'&fields=name,international_phone_number,formatted_address,website,rating,'
+                f'user_ratings_total,price_level,types&key={api_key}'
+            )
+            details_response = requests.get(details_url)
+            details_data = details_response.json()
+            details_result = details_data.get('result', {})
+            
+            phone = details_result.get('international_phone_number', 'N/A')
+            website = details_result.get('website', 'N/A')
+            rating = details_result.get('rating', 'N/A')
+            google_reviews = details_result.get('user_ratings_total', 'N/A')
+            price_level = details_result.get('price_level', 'N/A')
+            types = ', '.join(details_result.get('types', []))
+            
+            # Extract emails from the website (if available)
+            emails_found = []
+            if website != 'N/A':
+                emails_found = extract_emails_from_url(website)
+            emails_str = ', '.join(emails_found) if emails_found else 'N/A'
+            
+            writer.writerow({
+                'Name': name,
+                'Phone': phone,
+                'Address': address,
+                'Website': website,
+                'Emails': emails_str,
+                'Rating': rating,
+                'Google Reviews': google_reviews,
+                'Price Level': price_level,
+                'Types': types
+            })
+    
+    messagebox.showinfo("Success", f"Data successfully saved to {csv_filename}")
+
+
+# Setup Tkinter GUI
+root = tk.Tk()
+root.title("Business Scraper Tool")
+
+
+# Create labels and entry fields for the required inputs.
+tk.Label(root, text="API Key:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+api_key_entry = tk.Entry(root, width=50)
+api_key_entry.grid(row=0, column=1, padx=5, pady=5)
+
+
+tk.Label(root, text="Business Type (Keyword):").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+business_type_entry = tk.Entry(root, width=50)
+business_type_entry.grid(row=1, column=1, padx=5, pady=5)
+
+
+tk.Label(root, text="Zip Code:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+zip_entry = tk.Entry(root, width=50)
+zip_entry.grid(row=2, column=1, padx=5, pady=5)
+
+
+tk.Label(root, text="Search Radius (meters):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+radius_entry = tk.Entry(root, width=50)
+radius_entry.grid(row=3, column=1, padx=5, pady=5)
+
+
+tk.Label(root, text="Custom File Name (optional):").grid(row=4, column=0, sticky="e", padx=5, pady=5)
+file_name_entry = tk.Entry(root, width=50)
+file_name_entry.grid(row=4, column=1, padx=5, pady=5)
+
+
+# Create a Run Query button that triggers the data collection.
+run_button = tk.Button(root, text="Run Query", command=run_query)
+run_button.grid(row=5, column=0, columnspan=2, pady=10)
+
+
+root.mainloop()
+
+
+3. Save the File:
+   * Save the file with a .py extension (for example, business_scraper_ui.py).
+   * Make sure the file is saved in a location you can easily access (like your Documents folder).
+________________
+
+
+Step 5. Run the Script
+Using IDLE (Windows & Mac):
+1. Open IDLE.
+2. Click File → Open, then locate and open your saved file (e.g., business_scraper_ui.py).
+3. Press F5 (or select Run → Run Module) to run the script.
+4. A GUI window titled “Business Scraper Tool” will appear.
+Using the Command Line (Terminal/Command Prompt):
+For Windows:
+1. Open Command Prompt.
+Navigate to the folder where your file is saved (e.g., if it’s in Documents):
+bash
+Copy
+cd %USERPROFILE%\Documents
+2. Run the script:
+nginx
+Copy
+python business_scraper_ui.py
+3. (If needed, you may use python3 if multiple Python versions are installed.)
+For Mac:
+1. Open Terminal.
+Navigate to the folder where your file is saved (e.g., if it’s in Documents):
+bash
+Copy
+cd ~/Documents
+2. Run the script:
+nginx
+Copy
+python3 business_scraper_ui.py
+3. ________________
+
+
+Step 6. Using the GUI
+1. In the GUI window, fill in the following fields:
+   * API Key: Paste your Google API key.
+   * Business Type (Keyword): Enter the type of business (e.g., “hair salon”, “pet groomer”).
+   * Zip Code: Enter the zip code for the area you want to search.
+   * Search Radius (meters): Enter a number (e.g., 5000).
+   * Custom File Name (optional): Enter a custom base name for your CSV file (if left blank, a name will be generated automatically).
+2. Click the Run Query button.
+3. The tool will:
+   * Use the Geocoding API to convert the zip code to coordinates.
+   * Query the Google Places API (with pagination) to collect business information.
+   * Attempt to extract email addresses from business websites.
+   * Save the data to a CSV file.
+4. A pop-up message will confirm: “Data successfully saved to [filename].”
+5. Locate the CSV file in the same directory where you ran the script.
+________________
+
+
+Additional Notes
+* Internet Connection: Ensure you are connected to the internet since the script makes online API requests.
+* API Quotas: Google APIs have usage quotas. Make sure your API key is active and you remain within usage limits.
+* Troubleshooting:
+   * If errors occur, read the error messages in the pop-up windows or terminal.
+   * Verify that your API key is correct and that the required APIs are enabled in the Google Cloud Console.
+
+
+
+
+
+
+Prompt
+
+
+I need a complete training guide (SOP) for setting up and running a lead scraper tool using Python. The guide should be written for complete beginners (people who know nothing about Python or coding) and must work for both Windows and Mac. 
+
+
+Please include the following:
+1. Detailed step‐by‐step instructions on:
+   - Installing Python (with details for both Windows and Mac).
+   - Installing the required Python library “requests.”
+   - Creating a Google Cloud project, enabling the Google Places API and Geocoding API, and obtaining an API key.
+   - Copying and saving the provided Python code (with a .py extension) using a text editor or IDLE.
+   - Running the code both via IDLE (F5) and from the command line (Terminal on Mac, Command Prompt on Windows).
+   - Explaining the file navigation process (using commands like cd, ls, etc.).
+2. A detailed explanation of how the code works.
+3. The complete Python code that uses Tkinter to build a GUI. The code should:
+   - Allow the user to input their API key, a business type (keyword), a zip code, a search radius, and an optional custom file name.
+   - Use the Google Geocoding API to convert the zip code into latitude and longitude.
+   - Use the Google Places API to search for businesses (with pagination up to 60 results) and extract additional details.
+   - Attempt to extract email addresses from business websites using regex.
+   - Save all the data to a CSV file.
+   - Display a pop-up message when data is successfully saved.
+
+
+Provide the entire SOP and the code as the final answer.
