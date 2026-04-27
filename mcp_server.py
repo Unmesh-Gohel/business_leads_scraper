@@ -23,6 +23,7 @@ if str(_ROOT) not in sys.path:
 
 from mcp.server.fastmcp import FastMCP
 
+from ai_config import AIOptions
 from scraper_core import (
     parse_batch_file,
     parse_batch_lines,
@@ -43,6 +44,25 @@ def _api_key(explicit: Optional[str]) -> str:
     return key
 
 
+def _ai_options(
+    enable_enrichment: bool,
+    enable_outreach: bool,
+    openai_key: Optional[str],
+    tone: str,
+    service_offer: str,
+) -> Optional[AIOptions]:
+    if not enable_enrichment and not enable_outreach:
+        return None
+    return AIOptions.from_env_overrides(
+        enable_enrichment=bool(enable_enrichment),
+        enable_outreach=bool(enable_outreach),
+        openai_api_key=(openai_key or "").strip(),
+        model="",
+        tone=tone or "Professional",
+        service_offer=service_offer or "",
+    )
+
+
 @mcp.tool()
 def run_lead_scrape(
     keyword: str,
@@ -51,11 +71,23 @@ def run_lead_scrape(
     api_key: Optional[str] = None,
     custom_filename: str = "",
     output_path: Optional[str] = None,
+    enable_ai_enrichment: bool = False,
+    enable_ai_outreach: bool = False,
+    openai_api_key: Optional[str] = None,
+    outreach_tone: str = "Professional",
+    service_offer: str = "",
 ) -> dict:
     """
     Scrape local businesses for one keyword and zip (radius in miles). Writes a CSV and returns path and row count.
     """
     key = _api_key(api_key)
+    ai_opt = _ai_options(
+        enable_ai_enrichment,
+        enable_ai_outreach,
+        openai_api_key,
+        outreach_tone,
+        service_offer,
+    )
     path, count = run_single_scrape(
         key,
         keyword.strip(),
@@ -63,6 +95,7 @@ def run_lead_scrape(
         float(radius_miles),
         output_path=output_path.strip() if output_path else None,
         custom_filename=custom_filename.strip(),
+        ai_options=ai_opt,
     )
     return {"csv_path": path, "row_count": count, "status": "ok"}
 
@@ -75,6 +108,11 @@ def run_lead_scrape_batch(
     api_key: Optional[str] = None,
     custom_filename: str = "",
     output_path: Optional[str] = None,
+    enable_ai_enrichment: bool = False,
+    enable_ai_outreach: bool = False,
+    openai_api_key: Optional[str] = None,
+    outreach_tone: str = "Professional",
+    service_offer: str = "",
 ) -> dict:
     """
     Batch scrape: provide either batch_text (newline-separated keyword|zip) or batch_file path (.txt or .csv).
@@ -89,12 +127,20 @@ def run_lead_scrape_batch(
     else:
         raise ValueError("Provide either batch_text or batch_file.")
 
+    ai_opt = _ai_options(
+        enable_ai_enrichment,
+        enable_ai_outreach,
+        openai_api_key,
+        outreach_tone,
+        service_offer,
+    )
     path, count, errors = run_batch_scrape(
         key,
         pairs,
         float(radius_miles),
         output_path=output_path.strip() if output_path else None,
         custom_filename=custom_filename.strip(),
+        ai_options=ai_opt,
     )
     return {
         "csv_path": path,

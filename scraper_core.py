@@ -9,10 +9,13 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 from urllib.parse import urljoin, urlparse
 
 import requests
+
+from ai_config import AIOptions
+from ai_service import apply_ai_to_row, clear_ai_caches, csv_ai_fieldnames, html_to_plain_text
 
 METERS_PER_MILE = 1609.34
 
@@ -71,11 +74,12 @@ def extract_candidate_contact_pages(base_url, html):
 
 
 def extract_contact_data_from_website(website_url):
+    """Returns (names, phones, emails, plain_text_snippet_for_ai)."""
     try:
         main_html = fetch_website_content(website_url)
     except Exception as exc:
         print(f"Error fetching {website_url}: {exc}")
-        return [], [], []
+        return [], [], [], ""
 
     combined_html = [main_html]
     for page_url in extract_candidate_contact_pages(website_url, main_html):
@@ -88,7 +92,8 @@ def extract_contact_data_from_website(website_url):
     emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", joined_html))
     phones = set(extract_phones_from_text(joined_html))
     names = set(extract_contact_names_from_text(joined_html))
-    return sorted(names), sorted(phones), sorted(emails)
+    plain = html_to_plain_text(joined_html)
+    return sorted(names), sorted(phones), sorted(emails), plain
 
 
 def get_location_from_zip(api_key, zip_code):
@@ -133,7 +138,13 @@ def fetch_places_results(api_key, business_type, location, radius):
     return all_results
 
 
-def build_rows_for_results(api_key, all_results, business_type, zip_code):
+def build_rows_for_results(
+    api_key,
+    all_results,
+    business_type,
+    zip_code,
+    ai_options: Optional[AIOptions] = None,
+):
     rows = []
     for result in all_results:
         business_name = result.get("name", "N/A")
@@ -159,44 +170,52 @@ def build_rows_for_results(api_key, all_results, business_type, zip_code):
         contact_names = []
         phones_found = []
         emails_found = []
+        website_plain = ""
         if website != "N/A":
-            contact_names, phones_found, emails_found = extract_contact_data_from_website(website)
+            contact_names, phones_found, emails_found, website_plain = extract_contact_data_from_website(
+                website
+            )
         contact_names_str = ", ".join(contact_names) if contact_names else "N/A"
         phones_str = ", ".join(phones_found) if phones_found else "N/A"
         if phones_str == "N/A" and google_phone != "N/A":
             phones_str = google_phone
         emails_str = ", ".join(emails_found) if emails_found else "N/A"
 
-        rows.append(
-            {
-                "Search Keyword": business_type,
-                "Search Zip Code": zip_code,
-                "Company Name": business_name,
-                "Contact Name": contact_names_str,
-                "Phone": phones_str,
-                "Address 1": address,
-                "Website": website,
-                "Email": emails_found[0] if emails_found else "N/A",
-                "All Emails": emails_str,
-                "Rating": rating,
-                "Google Reviews": google_reviews,
-                "Price Level": price_level,
-                "Types": types,
-            }
-        )
+        base_row = {
+            "Search Keyword": business_type,
+            "Search Zip Code": zip_code,
+            "Company Name": business_name,
+            "Contact Name": contact_names_str,
+            "Phone": phones_str,
+            "Address 1": address,
+            "Website": website,
+            "Email": emails_found[0] if emails_found else "N/A",
+            "All Emails": emails_str,
+            "Rating": rating,
+            "Google Reviews": google_reviews,
+            "Price Level": price_level,
+            "Types": types,
+        }
+        rows.append(apply_ai_to_row(base_row, website_plain, ai_options))
     return rows
 
 
-def scrape_keyword_zip(api_key, business_type, zip_code, radius):
+def scrape_keyword_zip(
+    api_key,
+    business_type,
+    zip_code,
+    radius,
+    ai_options: Optional[AIOptions] = None,
+):
     location = get_location_from_zip(api_key, zip_code)
     if not location:
         raise ValueError(f"Geocoding failed for zip code: {zip_code}")
     all_results = fetch_places_results(api_key, business_type, location, radius)
-    return build_rows_for_results(api_key, all_results, business_type, zip_code)
+    return build_rows_for_results(api_key, all_results, business_type, zip_code, ai_options)
 
 
-def write_rows_to_csv(csv_filename, rows):
-    fieldnames = [
+def csv_base_fieldnames() -> list[str]:
+    return [
         "Search Keyword",
         "Search Zip Code",
         "Company Name",
@@ -211,6 +230,10 @@ def write_rows_to_csv(csv_filename, rows):
         "Price Level",
         "Types",
     ]
+
+
+def write_rows_to_csv(csv_filename, rows):
+    fieldnames = csv_base_fieldnames() + csv_ai_fieldnames()
     path = Path(csv_filename)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as csvfile:
@@ -308,10 +331,12 @@ def run_single_scrape(
     radius_miles,
     output_path=None,
     custom_filename="",
+    ai_options: Optional[AIOptions] = None,
 ):
     """Run one keyword+zip scrape and write CSV. Returns (absolute_path_str, row_count)."""
+    clear_ai_caches()
     radius_meters = miles_to_meters(radius_miles)
-    rows = scrape_keyword_zip(api_key, keyword, zip_code, radius_meters)
+    rows = scrape_keyword_zip(api_key, keyword, zip_code, radius_meters, ai_options)
     out = output_path or default_single_output_path(keyword, zip_code, custom_filename)
     out = str(Path(out).resolve())
     write_rows_to_csv(out, rows)
@@ -324,17 +349,19 @@ def run_batch_scrape(
     radius_miles,
     output_path=None,
     custom_filename="",
+    ai_options: Optional[AIOptions] = None,
 ):
     """
     Run multiple keyword|zip pairs. Returns (absolute_path_str, row_count, errors).
     errors is a list of strings for failed pairs.
     """
+    clear_ai_caches()
     radius_meters = miles_to_meters(radius_miles)
     all_rows = []
     errors = []
     for keyword, zip_code in batch_pairs:
         try:
-            rows = scrape_keyword_zip(api_key, keyword, zip_code, radius_meters)
+            rows = scrape_keyword_zip(api_key, keyword, zip_code, radius_meters, ai_options)
             all_rows.extend(rows)
         except Exception as exc:
             errors.append(f"{keyword}|{zip_code}: {exc}")

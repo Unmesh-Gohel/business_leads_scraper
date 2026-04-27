@@ -11,6 +11,7 @@ import os
 import sys
 from typing import Optional
 
+from ai_config import AIOptions
 from scraper_core import (
     parse_batch_file,
     parse_batch_lines,
@@ -30,6 +31,53 @@ def _resolve_api_key(explicit: Optional[str]) -> str:
     return key
 
 
+def _ai_options_from_args(args: argparse.Namespace) -> Optional[AIOptions]:
+    if not getattr(args, "ai_enrich", False) and not getattr(args, "ai_outreach", False):
+        return None
+    return AIOptions.from_env_overrides(
+        enable_enrichment=args.ai_enrich,
+        enable_outreach=args.ai_outreach,
+        openai_api_key=(args.openai_api_key or "").strip(),
+        model=(args.openai_model or "").strip(),
+        tone=getattr(args, "tone", "Professional") or "Professional",
+        service_offer=(args.service_offer or "").strip(),
+    )
+
+
+def _add_ai_arguments(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--ai-enrich",
+        action="store_true",
+        help="OpenAI JSON enrichment (role, score, summary). Needs OPENAI_API_KEY or --openai-api-key.",
+    )
+    p.add_argument(
+        "--ai-outreach",
+        action="store_true",
+        help="OpenAI personalized email/SMS. Needs OPENAI_API_KEY or --openai-api-key.",
+    )
+    p.add_argument(
+        "--openai-api-key",
+        default=None,
+        help="OpenAI API key (else OPENAI_API_KEY env).",
+    )
+    p.add_argument(
+        "--openai-model",
+        default="",
+        help="Chat model (else LEAD_SCRAPER_AI_MODEL or gpt-4o-mini).",
+    )
+    p.add_argument(
+        "--tone",
+        default="Professional",
+        choices=["Professional", "Friendly", "Direct"],
+        help="Outreach tone when --ai-outreach is set.",
+    )
+    p.add_argument(
+        "--service-offer",
+        default="",
+        help="Short value proposition for outreach copy.",
+    )
+
+
 def cmd_single(args: argparse.Namespace) -> None:
     api_key = _resolve_api_key(args.api_key)
     path, count = run_single_scrape(
@@ -39,6 +87,7 @@ def cmd_single(args: argparse.Namespace) -> None:
         args.radius_miles,
         output_path=args.output,
         custom_filename=args.custom_name or "",
+        ai_options=_ai_options_from_args(args),
     )
     print(f"Wrote {count} rows to {path}")
 
@@ -63,6 +112,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
         args.radius_miles,
         output_path=args.output,
         custom_filename=args.custom_name or "",
+        ai_options=_ai_options_from_args(args),
     )
     print(f"Wrote {count} rows to {path}")
     if errors:
@@ -101,6 +151,7 @@ def main() -> None:
         default="",
         help="Optional base name for default output filename.",
     )
+    _add_ai_arguments(p_single)
     p_single.set_defaults(func=cmd_single)
 
     p_batch = sub.add_parser("batch", help="Multiple keyword|zip pairs.")
@@ -123,6 +174,7 @@ def main() -> None:
     )
     p_batch.add_argument("-o", "--output", default=None, help="Output CSV path.")
     p_batch.add_argument("--custom-name", default="", help="Optional base name for output file.")
+    _add_ai_arguments(p_batch)
     p_batch.set_defaults(func=cmd_batch)
 
     args = parser.parse_args()
