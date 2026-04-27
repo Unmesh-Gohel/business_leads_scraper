@@ -37,6 +37,56 @@ From this folder:
 python business_scraper_ui.py
 ```
 
+### Headless CLI (automation / MCP / scripts)
+
+Uses the same logic as the GUI. Set `GOOGLE_MAPS_API_KEY` or pass `--api-key`.
+
+Single search:
+
+```bash
+python scrape_cli.py single --keyword realtor --zip 08830 --radius-miles 5
+```
+
+Batch from file (`.txt` with `keyword|zip` lines or `.csv` with `keyword,zip`):
+
+```bash
+python scrape_cli.py batch --batch-file batch_input_template.txt --radius-miles 5 -o my_batch.csv
+```
+
+Stdin batch (`-`):
+
+```bash
+type batch_input_template.txt | python scrape_cli.py batch --batch-file - --radius-miles 5
+```
+
+## 2b) Claude Desktop (MCP)
+
+The MCP server uses **stdio** (default for Claude Desktop). Install deps including `mcp`, then add a local MCP server in Claude Desktop settings.
+
+Example `claude_desktop_config.json` fragment (adjust paths to your machine):
+
+```json
+{
+  "mcpServers": {
+    "lead-scraper": {
+      "command": "C:\\\\Users\\\\YOUR_USER\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.exe",
+      "args": ["D:\\\\AI Agency\\\\Lead Scaper\\\\mcp_server.py"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "YOUR_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+**Tools exposed:**
+
+- `run_lead_scrape` — keyword, zip, radius miles; returns `csv_path` and `row_count`.
+- `run_lead_scrape_batch` — `batch_text` (newline `keyword|zip`) or `batch_file` path.
+- `preview_leads_csv` — first rows of a CSV for quick review.
+
+**Note:** The official `mcp` package targets **Python 3.10+**. Use Python 3.10 or newer for the MCP server; the GUI/CLI scraping still works on 3.9 if you omit `mcp`.
+
 ## 3) Batch Input Formats
 
 ### TXT example (`batch_input_template.txt`)
